@@ -1,11 +1,12 @@
-# 🌤️ 天气播报机器人
+# 🤖 多任务播报机器人
 
-一个基于Python的智能天气播报机器人，使用彩玉天气API获取实时天气数据，并通过钉钉机器人定时推送美化后的天气信息到钉钉群。
+一个基于Python的智能多任务播报机器人，支持天气播报、热搜榜单等多种信息推送，通过钉钉机器人定时推送美化后的信息到钉钉群。采用模块化架构，方便扩展新的推送任务。
 
 ## ✨ 功能特性
 
 - 🌡️ **实时天气数据**：集成彩玉天气API，获取准确的天气信息
 - 🔮 **小时级预报**：支持未来2小时的详细天气预报
+- 🔥 **热搜榜单**：支持微博热搜、知乎热榜等多种热搜数据源
 - 🤖 **钉钉机器人推送**：支持文本和Markdown格式的消息推送
 - ⏰ **定时任务调度**：可配置任意间隔的定时播报，支持整点执行
 - 🎨 **美化消息格式**：丰富的emoji和结构化布局
@@ -13,6 +14,7 @@
 - 💡 **智能提醒**：根据天气状况提供贴心的生活建议
 - 📊 **详细天气信息**：温度、湿度、风向风速、能见度、气压等
 - 🌧️ **降水预警**：智能识别未来降雨趋势并提前提醒
+- 🔧 **模块化架构**：基于任务的可扩展架构，方便添加新功能
 - 🛡️ **错误处理**：完善的异常处理和日志记录
 
 ## 🚀 快速开始
@@ -85,11 +87,11 @@ python run.py
 # 测试模式（发送一次测试消息）
 python main.py --test
 
-# 定时模式（每小时整点发送）
-python main.py
+# 显示执行计划
+python main.py --show-schedule
 
-# 自定义间隔（每3小时整点发送，如0:00, 3:00, 6:00...）
-python main.py --interval 3
+# 正常运行（根据配置文件中的cron表达式执行）
+python main.py
 ```
 
 ## 📁 项目结构
@@ -98,6 +100,8 @@ python main.py --interval 3
 dingding/
 ├── main.py              # 主程序入口
 ├── run.py               # 便捷启动器
+├── task_manager.py      # 任务管理工具
+├── cron_helper.py       # Cron表达式辅助工具
 ├── pyproject.toml       # 项目配置和依赖
 ├── config.example       # 配置文件模板
 ├── README.md           # 使用说明
@@ -107,14 +111,24 @@ dingding/
     ├── __init__.py     # 包初始化
     ├── config.py       # 配置管理
     ├── weather.py      # 天气API调用
+    ├── hotsearch.py    # 热搜API调用
     ├── dingtalk.py     # 钉钉机器人推送
-    ├── formatter.py    # 消息格式化
-    └── scheduler.py    # 定时任务调度
+    ├── formatter.py    # 天气消息格式化
+    ├── hotsearch_formatter.py  # 热搜消息格式化
+    ├── scheduler.py    # 定时任务调度
+    ├── base/           # 基础架构
+    │   ├── __init__.py
+    │   ├── task_base.py    # 任务基类
+    │   └── task_manager.py # 任务管理器
+    └── tasks/          # 具体任务实现
+        ├── __init__.py
+        ├── weather_task.py     # 天气播报任务
+        └── hotsearch_task.py   # 热搜榜单任务
 ```
 
 ## 🔧 配置说明
 
-### 环境变量配置
+### 基础配置
 
 | 变量名 | 必填 | 描述 | 示例 |
 |--------|------|------|------|
@@ -125,26 +139,115 @@ dingding/
 | `DINGTALK_SECRET` | ❌ | 钉钉机器人密钥（加签） | `your_secret_here` |
 | `CITY_NAME` | ❌ | 城市显示名称 | `北京` |
 
+### ⏰ Cron定时任务配置
+
+项目支持使用cron表达式灵活配置每个任务的执行时间：
+
+| 变量名 | 描述 | 默认值 | 示例 |
+|--------|------|--------|------|
+| `WEATHER_TASK_CRON` | 天气播报任务执行时间 | `0 * * * *` | 每小时执行 |
+| `WEATHER_TASK_ENABLED` | 是否启用天气任务 | `true` | `true/false` |
+| `HOTSEARCH_TASK_CRON` | 热搜榜单任务执行时间 | `0 */2 * * *` | 每2小时执行 |
+| `HOTSEARCH_TASK_ENABLED` | 是否启用热搜任务 | `true` | `true/false` |
+| `HOTSEARCH_TASK_SOURCE` | 热搜数据源 | `weibo` | `weibo/zhihu/douyin等` |
+
+#### 添加更多热搜源
+
+```bash
+# 知乎热榜 - 每天8点、12点、18点执行
+HOTSEARCH_ZHIHU_CRON=0 8,12,18 * * *
+HOTSEARCH_ZHIHU_ENABLED=true
+
+# 抖音热搜 - 每4小时执行
+HOTSEARCH_DOUYIN_CRON=0 */4 * * *
+HOTSEARCH_DOUYIN_ENABLED=true
+```
+
 ### 命令行参数
 
-| 参数 | 描述 | 默认值 |
-|------|------|--------|
-| `--interval` | 播报间隔（小时），整点执行 | `1` |
-| `--test` | 测试模式，发送一次消息后退出 | `False` |
-| `--config` | 指定配置文件路径 | 自动检测 |
+| 参数 | 描述 |
+|------|------|
+| `--test` | 测试模式，发送一次消息后退出 |
+| `--show-schedule` | 显示任务执行计划并退出 |
+| `--config` | 指定配置文件路径 |
 
-### ⏰ 定时执行说明
+### 🕐 Cron表达式说明
 
-程序支持整点定时执行，确保消息在整时整分发送：
+Cron表达式格式：`分 时 日 月 周`
 
-- **每1小时**: 每个整点执行（如 01:00, 02:00, 03:00...）
-- **每2小时**: 每隔2小时的整点执行（如 00:00, 02:00, 04:00...）
-- **每3小时**: 每隔3小时的整点执行（如 00:00, 03:00, 06:00...）
-- **每6小时**: 每隔6小时的整点执行（如 00:00, 06:00, 12:00, 18:00）
+#### 常用示例
 
-**启动行为**：
-- 如果程序启动时刚好在整点（如14:00:xx），会立即执行一次
-- 如果不在整点，会等待到下个符合间隔的整点才开始执行
+| Cron表达式 | 说明 |
+|------------|------|
+| `0 * * * *` | 每小时执行 |
+| `0 */2 * * *` | 每2小时执行 |
+| `0 8,12,18 * * *` | 每天8点、12点、18点执行 |
+| `30 6 * * *` | 每天早上6:30执行 |
+| `0 9 * * 1-5` | 工作日9点执行 |
+| `*/15 * * * *` | 每15分钟执行 |
+
+#### Cron辅助工具
+
+```bash
+# 显示常见示例
+python cron_helper.py examples
+
+# 验证cron表达式
+python cron_helper.py validate "0 */2 * * *"
+
+# 查看下次执行时间
+python cron_helper.py next "0 8,12,18 * * *"
+
+# 解释cron表达式
+python cron_helper.py explain "0 9 * * 1-5"
+```
+
+## 🔧 任务管理
+
+项目支持多种任务的独立管理，可以通过任务管理工具进行控制：
+
+```bash
+# 查看所有任务
+python task_manager.py list
+
+# 测试所有任务
+python task_manager.py test
+
+# 测试特定任务
+python task_manager.py test --task "天气播报"
+
+# 启用/禁用任务
+python task_manager.py enable --task "热搜榜单-weibo"
+python task_manager.py disable --task "热搜榜单-weibo"
+
+# 查看详细状态
+python task_manager.py status
+```
+
+### 默认任务
+
+- **天气播报**：获取实时天气和未来2小时预报
+- **热搜榜单-weibo**：获取微博热搜榜单
+
+### 添加自定义任务
+
+创建新任务只需要继承 `TaskBase` 类：
+
+```python
+from src.base import TaskBase
+
+class CustomTask(TaskBase):
+    def __init__(self, dingtalk_bot):
+        super().__init__("自定义任务", dingtalk_bot)
+    
+    def fetch_data(self):
+        # 实现数据获取逻辑
+        return {"data": "your_data"}
+    
+    def format_message(self, data):
+        # 实现消息格式化逻辑
+        return "标题", "内容"
+```
 
 ## 📱 消息效果预览
 

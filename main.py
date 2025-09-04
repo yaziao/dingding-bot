@@ -34,10 +34,9 @@ def main():
         description="天气播报机器人 - 定时获取天气信息并推送到钉钉群"
     )
     parser.add_argument(
-        "--interval",
-        type=int,
-        default=1,
-        help="播报间隔（小时），默认1小时"
+        "--show-schedule",
+        action="store_true",
+        help="显示任务执行计划"
     )
     parser.add_argument(
         "--test",
@@ -69,10 +68,15 @@ def main():
             else:
                 logger.error("❌ 测试消息发送失败")
                 sys.exit(1)
+        elif args.show_schedule:
+            # 显示执行计划
+            logger.info("=== 任务执行计划 ===")
+            bot.scheduler.show_next_run_times()
+            sys.exit(0)
         else:
             # 正常运行模式
-            logger.info(f"启动天气播报机器人，间隔：{args.interval}小时")
-            bot.run(interval_hours=args.interval)
+            logger.info("启动多任务播报机器人（基于Cron调度）")
+            bot.run()
             
     except KeyboardInterrupt:
         logger.info("接收到停止信号，正在退出...")

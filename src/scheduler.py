@@ -1,129 +1,191 @@
 """定时任务调度模块"""
-import schedule
 import time
 from datetime import datetime, timedelta
 from typing import Callable, Optional, List
 from loguru import logger
-from .weather import WeatherAPI, WeatherData
+from apscheduler.schedulers.blocking import BlockingScheduler
+from apscheduler.triggers.cron import CronTrigger
+from apscheduler.executors.pool import ThreadPoolExecutor
+from croniter import croniter
+from .base import TaskManager
 from .dingtalk import DingTalkBot
-from .formatter import WeatherFormatter
 from .config import config
 
-class WeatherScheduler:
-    """天气播报定时任务调度器"""
+class CronTaskScheduler:
+    """基于Cron表达式的任务调度器"""
     
     def __init__(self):
-        self.weather_api = WeatherAPI(config.caiyun_api_key)
+        self.task_manager = TaskManager()
         self.dingtalk_bot = DingTalkBot(config.dingtalk_webhook, config.dingtalk_secret)
+        
+        # 配置APScheduler
+        executors = {
+            'default': ThreadPoolExecutor(10),  # 最多10个线程
+        }
+        
+        job_defaults = {
+            'coalesce': False,  # 不合并任务
+            'max_instances': 1,  # 每个任务最多同时运行1个实例
+            'misfire_grace_time': 300  # 容错时间5分钟
+        }
+        
+        self.scheduler = BlockingScheduler(
+            executors=executors,
+            job_defaults=job_defaults,
+            timezone='Asia/Shanghai'  # 设置时区
+        )
+        
         self.is_running = False
     
-    def _get_next_hour_times(self, interval_hours: int) -> List[str]:
-        """计算符合间隔的整点时间列表"""
-        times = []
-        
-        # 从0点开始，按间隔生成所有整点时间
-        for hour in range(0, 24, interval_hours):
-            time_str = f"{hour:02d}:00"
-            times.append(time_str)
-        
-        return times
-    
-    def _wait_for_next_hour(self, interval_hours: int):
-        """等待到下个符合间隔的整点"""
-        current_time = datetime.now()
-        
-        # 计算下一个整点
-        next_hour = current_time.replace(minute=0, second=0, microsecond=0)
-        if current_time.minute > 0 or current_time.second > 0:
-            next_hour += timedelta(hours=1)
-        
-        # 如果间隔大于1小时，找到下一个符合间隔的整点
-        if interval_hours > 1:
-            current_hour = next_hour.hour
-            # 找到下一个符合间隔的小时
-            next_valid_hour = ((current_hour // interval_hours) + 1) * interval_hours
-            if next_valid_hour >= 24:
-                # 跨天处理
-                next_valid_hour = 0
-                next_hour = next_hour.replace(hour=0) + timedelta(days=1)
-            else:
-                next_hour = next_hour.replace(hour=next_valid_hour)
-        
-        wait_seconds = (next_hour - current_time).total_seconds()
-        
-        if wait_seconds > 0:
-            logger.info(f"等待 {wait_seconds:.0f} 秒到下个整点 {next_hour.strftime('%H:%M')}")
-            time.sleep(wait_seconds)
-    
-    def send_weather_report(self) -> bool:
-        """发送天气播报"""
+    def validate_cron_expression(self, cron_expr: str) -> bool:
+        """验证cron表达式是否有效"""
         try:
-            logger.info("开始获取天气数据...")
-            
-            # 获取天气数据
-            weather_data = self.weather_api.get_weather(config.longitude, config.latitude)
-            if not weather_data:
-                logger.error("获取天气数据失败")
-                return False
-            
-            logger.info(f"成功获取天气数据: {weather_data.weather_desc}, {weather_data.temperature}°C")
-            
-            # 格式化消息
-            title, content = WeatherFormatter.format_markdown_message(weather_data, config.city_name)
-            
-            # 发送到钉钉
-            success = self.dingtalk_bot.send_markdown_message(title, content)
-            
-            if success:
-                logger.info("天气播报发送成功")
-            else:
-                logger.error("天气播报发送失败")
-            
-            return success
-            
+            croniter(cron_expr)
+            return True
         except Exception as e:
-            logger.error(f"发送天气播报异常: {e}")
+            logger.error(f"无效的cron表达式 '{cron_expr}': {e}")
             return False
     
-    def start_scheduler(self, interval_hours: int = 1):
-        """启动定时任务调度器（整点执行）"""
+    def get_next_run_time(self, cron_expr: str) -> Optional[datetime]:
+        """获取cron表达式的下次执行时间"""
+        try:
+            cron = croniter(cron_expr, datetime.now())
+            return cron.get_next(datetime)
+        except Exception as e:
+            logger.error(f"计算下次执行时间失败: {e}")
+            return None
+    
+    def add_cron_job(self, task_name: str, cron_expr: str, func: Callable, **kwargs):
+        """添加cron定时任务"""
+        try:
+            if not self.validate_cron_expression(cron_expr):
+                return False
+            
+            # 解析cron表达式（APScheduler使用的格式）
+            cron_parts = cron_expr.split()
+            if len(cron_parts) != 5:
+                logger.error(f"cron表达式格式错误，应为5个字段: {cron_expr}")
+                return False
+            
+            minute, hour, day, month, day_of_week = cron_parts
+            
+            trigger = CronTrigger(
+                minute=minute,
+                hour=hour,
+                day=day,
+                month=month,
+                day_of_week=day_of_week,
+                timezone='Asia/Shanghai'
+            )
+            
+            self.scheduler.add_job(
+                func=func,
+                trigger=trigger,
+                id=task_name,
+                name=task_name,
+                replace_existing=True,
+                **kwargs
+            )
+            
+            next_run = self.get_next_run_time(cron_expr)
+            logger.info(f"任务 {task_name} 已添加，cron: {cron_expr}, 下次执行: {next_run}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"添加cron任务失败: {e}")
+            return False
+    
+    def execute_task_by_name(self, task_name: str) -> bool:
+        """执行指定名称的任务"""
+        try:
+            logger.info(f"执行任务: {task_name}")
+            result = self.task_manager.execute_task(task_name)
+            
+            if result:
+                logger.info(f"任务 {task_name} 执行成功")
+            else:
+                logger.error(f"任务 {task_name} 执行失败")
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"执行任务 {task_name} 异常: {e}")
+            return False
+    
+    def register_task(self, task):
+        """注册任务"""
+        return self.task_manager.register_task(task)
+    
+    def unregister_task(self, task_name: str):
+        """注销任务"""
+        return self.task_manager.unregister_task(task_name)
+    
+    def list_tasks(self):
+        """列出所有任务"""
+        return self.task_manager.list_tasks()
+    
+    def get_task_status(self):
+        """获取所有任务状态"""
+        return self.task_manager.get_all_task_status()
+    
+    def setup_cron_jobs(self):
+        """根据配置设置所有cron任务"""
+        try:
+            # 获取启用的任务配置
+            enabled_configs = config.get_enabled_task_configs()
+            
+            logger.info("根据配置设置定时任务...")
+            
+            for task_key, task_config in enabled_configs.items():
+                if task_key == "weather":
+                    # 天气任务
+                    self.add_cron_job(
+                        task_name="天气播报",
+                        cron_expr=task_config.cron,
+                        func=lambda: self.execute_task_by_name("天气播报")
+                    )
+                elif task_key.startswith("hotsearch"):
+                    # 热搜任务
+                    if task_key == "hotsearch":
+                        task_name = f"热搜榜单-{task_config.source}"
+                    else:
+                        # hotsearch_zhihu -> 热搜榜单-zhihu
+                        source = task_key.split("_", 1)[1]
+                        task_name = f"热搜榜单-{source}"
+                    
+                    self.add_cron_job(
+                        task_name=task_name,
+                        cron_expr=task_config.cron,
+                        func=lambda name=task_name: self.execute_task_by_name(name)
+                    )
+                else:
+                    logger.warning(f"未知的任务类型: {task_key}")
+            
+            logger.info(f"已设置 {len(enabled_configs)} 个定时任务")
+            
+        except Exception as e:
+            logger.error(f"设置cron任务失败: {e}")
+            raise
+    
+    def start_scheduler(self):
+        """启动cron调度器"""
         try:
             # 验证配置
             config.validate_config()
             
-            logger.info(f"启动天气播报定时任务，每{interval_hours}小时在整点执行")
+            logger.info("启动Cron定时任务调度器...")
             
-            # 设置整点定时任务
-            if interval_hours == 1:
-                # 每小时整点执行
-                schedule.every().hour.at(":00").do(self.send_weather_report)
-                logger.info("已设置每小时整点执行任务")
-            else:
-                # 多小时间隔，设置特定整点时间
-                hour_times = self._get_next_hour_times(interval_hours)
-                for time_str in hour_times:
-                    schedule.every().day.at(time_str).do(self.send_weather_report)
-                    logger.info(f"已设置每天{time_str}执行任务")
+            # 设置任务
+            self.setup_cron_jobs()
             
-            # 首次执行选择：如果不在整点，先等待到整点
-            current_time = datetime.now()
-            if current_time.minute == 0 and current_time.second < 30:
-                # 如果刚好在整点附近，立即执行
-                logger.info("当前为整点，立即执行首次天气播报...")
-                self.send_weather_report()
-            else:
-                # 等待到下个整点
-                logger.info("等待下个整点执行首次天气播报...")
-                self._wait_for_next_hour(interval_hours)
-                if self.is_running:  # 确保没有被停止
-                    self.send_weather_report()
+            # 显示下次执行时间
+            self.show_next_run_times()
             
             self.is_running = True
             
-            # 运行调度器
-            while self.is_running:
-                schedule.run_pending()
-                time.sleep(30)  # 每30秒检查一次，提高精度
+            # 启动调度器（阻塞运行）
+            logger.info("调度器开始运行...")
+            self.scheduler.start()
                 
         except KeyboardInterrupt:
             logger.info("收到退出信号，正在停止调度器...")
@@ -132,55 +194,120 @@ class WeatherScheduler:
             logger.error(f"调度器运行异常: {e}")
             self.stop_scheduler()
     
+    def show_next_run_times(self):
+        """显示所有任务的下次执行时间"""
+        logger.info("=== 任务执行计划 ===")
+        
+        enabled_configs = config.get_enabled_task_configs()
+        for task_key, task_config in enabled_configs.items():
+            next_run = self.get_next_run_time(task_config.cron)
+            if next_run:
+                logger.info(f"📅 {task_key}: {task_config.cron} -> {next_run.strftime('%Y-%m-%d %H:%M:%S')}")
+            else:
+                logger.warning(f"⚠️ {task_key}: cron表达式无效 {task_config.cron}")
+        
+        logger.info("===================")
+    
     def stop_scheduler(self):
         """停止调度器"""
         self.is_running = False
-        schedule.clear()
+        if self.scheduler.running:
+            self.scheduler.shutdown(wait=False)
         logger.info("调度器已停止")
     
-    def add_custom_schedule(self, time_str: str, func: Callable):
-        """添加自定义定时任务"""
-        try:
-            schedule.every().day.at(time_str).do(func)
-            logger.info(f"添加自定义定时任务: 每天{time_str}执行")
-        except Exception as e:
-            logger.error(f"添加自定义定时任务失败: {e}")
+    def get_scheduled_jobs(self) -> list:
+        """获取所有已调度的任务"""
+        return self.scheduler.get_jobs()
     
-    def get_next_run_time(self) -> Optional[datetime]:
-        """获取下次运行时间"""
-        jobs = schedule.jobs
+    def print_jobs(self):
+        """打印所有任务信息"""
+        jobs = self.get_scheduled_jobs()
         if not jobs:
-            return None
+            logger.info("没有已调度的任务")
+            return
         
-        next_run = min(job.next_run for job in jobs)
-        return next_run
-    
-    def list_jobs(self) -> list:
-        """列出所有定时任务"""
-        return [str(job) for job in schedule.jobs]
+        logger.info("已调度的任务:")
+        for job in jobs:
+            logger.info(f"  - {job.id}: {job.next_run_time}")
 
-class WeatherBot:
-    """天气机器人主类"""
+# 保持向后兼容的别名
+MultiTaskScheduler = CronTaskScheduler
+
+class MultiTaskBot:
+    """多任务机器人主类"""
     
     def __init__(self):
-        self.scheduler = WeatherScheduler()
+        self.scheduler = CronTaskScheduler()
+        self._setup_default_tasks()
     
-    def run(self, interval_hours: int = 1):
-        """运行天气机器人"""
-        logger.info("=== 天气播报机器人启动 ===")
+    def _setup_default_tasks(self):
+        """根据配置设置任务"""
+        from .tasks import WeatherTask, HotSearchTask
+        
+        # 获取启用的任务配置
+        enabled_configs = config.get_enabled_task_configs()
+        
+        for task_key, task_config in enabled_configs.items():
+            if task_key == "weather":
+                # 注册天气任务
+                weather_task = WeatherTask(self.scheduler.dingtalk_bot)
+                self.scheduler.register_task(weather_task)
+                
+            elif task_key.startswith("hotsearch"):
+                # 注册热搜任务
+                source = task_config.source
+                hotsearch_task = HotSearchTask(self.scheduler.dingtalk_bot, source_type=source)
+                self.scheduler.register_task(hotsearch_task)
+    
+    def add_hotsearch_task(self, source_type: str):
+        """添加热搜任务"""
+        from .tasks import HotSearchTask
+        hotsearch_task = HotSearchTask(self.scheduler.dingtalk_bot, source_type=source_type)
+        return self.scheduler.register_task(hotsearch_task)
+    
+    def register_task(self, task):
+        """注册新任务"""
+        return self.scheduler.register_task(task)
+    
+    def unregister_task(self, task_name: str):
+        """注销任务"""
+        return self.scheduler.unregister_task(task_name)
+    
+    def list_tasks(self):
+        """列出所有任务"""
+        return self.scheduler.list_tasks()
+    
+    def get_task_status(self):
+        """获取任务状态"""
+        return self.scheduler.get_task_status()
+    
+    def run(self):
+        """运行多任务机器人"""
+        logger.info("=== 多任务播报机器人启动 ===")
         logger.info(f"城市: {config.city_name}")
         logger.info(f"坐标: {config.longitude}, {config.latitude}")
-        logger.info(f"播报间隔: 每{interval_hours}小时（整点执行）")
+        
+        # 显示已注册的任务
+        tasks = self.list_tasks()
+        logger.info(f"已注册任务: {', '.join(tasks)}")
         
         try:
-            self.scheduler.start_scheduler(interval_hours)
+            self.scheduler.start_scheduler()
         except Exception as e:
             logger.error(f"机器人运行异常: {e}")
         finally:
-            logger.info("=== 天气播报机器人停止 ===")
+            logger.info("=== 多任务播报机器人停止 ===")
     
     def send_test_message(self):
         """发送测试消息"""
-        logger.info("发送测试天气播报...")
-        success = self.scheduler.send_weather_report()
-        return success
+        logger.info("执行测试任务...")
+        # 执行所有已注册的任务
+        results = self.scheduler.task_manager.execute_all_tasks()
+        success_count = sum(1 for result in results.values() if result is True)
+        total_count = len([r for r in results.values() if r is not None])
+        
+        logger.info(f"测试完成: {success_count}/{total_count} 成功")
+        return success_count > 0
+
+# 保持向后兼容
+WeatherBot = MultiTaskBot

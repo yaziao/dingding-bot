@@ -13,3 +13,18 @@ DINGTALK_SECRET=
 
 # 城市名称 (用于显示)
 CITY_NAME=北京
+
+# 定时任务配置 (cron格式: 分 时 日 月 周)
+# 天气播报任务 - 每小时执行
+WEATHER_TASK_CRON=0 * * * *
+WEATHER_TASK_ENABLED=true
+
+# 热搜榜单任务 - 每2小时执行
+HOTSEARCH_TASK_CRON=0 */2 * * *
+HOTSEARCH_TASK_ENABLED=true
+HOTSEARCH_TASK_SOURCE=weibo
+
+# 可以添加更多热搜源任务
+# HOTSEARCH_ZHIHU_CRON=0 8,12,18 * * *
+# HOTSEARCH_ZHIHU_ENABLED=false
+# HOTSEARCH_ZHIHU_SOURCE=zhihu
