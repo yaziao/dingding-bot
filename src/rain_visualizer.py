@@ -3,21 +3,39 @@ import io
 import base64
 from typing import List, Optional, Tuple
 from datetime import datetime, timedelta
-import matplotlib.pyplot as plt
-import matplotlib.patches as patches
-from matplotlib.font_manager import FontProperties
-from matplotlib.dates import DateFormatter, HourLocator
-import numpy as np
 from .weather import WeatherData, HourlyWeatherData
 from loguru import logger
+
+# 可选的matplotlib导入，处理服务器环境兼容性
+try:
+    import matplotlib
+    # 设置后端，避免在无GUI环境中出错
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    import matplotlib.patches as patches
+    from matplotlib.font_manager import FontProperties
+    from matplotlib.dates import DateFormatter, HourLocator
+    import numpy as np
+    HAS_MATPLOTLIB = True
+    logger.info("matplotlib导入成功")
+except ImportError as e:
+    HAS_MATPLOTLIB = False
+    logger.warning(f"matplotlib导入失败，将只使用ASCII雨图: {e}")
+except Exception as e:
+    HAS_MATPLOTLIB = False
+    logger.warning(f"matplotlib初始化失败，将只使用ASCII雨图: {e}")
 
 class RainVisualizer:
     """雨图可视化器"""
     
     def __init__(self):
-        # 设置中文字体
-        plt.rcParams['font.sans-serif'] = ['SimHei', 'Arial Unicode MS', 'DejaVu Sans']
-        plt.rcParams['axes.unicode_minus'] = False
+        # 只在有matplotlib时设置字体
+        if HAS_MATPLOTLIB:
+            try:
+                plt.rcParams['font.sans-serif'] = ['SimHei', 'Arial Unicode MS', 'DejaVu Sans']
+                plt.rcParams['axes.unicode_minus'] = False
+            except Exception as e:
+                logger.warning(f"matplotlib字体设置失败: {e}")
         
     def generate_rain_chart(self, weather_data: WeatherData, city_name: str, 
                           extended_hours: int = 12) -> Optional[str]:
@@ -32,6 +50,11 @@ class RainVisualizer:
         Returns:
             base64编码的图片字符串，如果生成失败返回None
         """
+        # 如果没有matplotlib，直接返回None，让系统使用ASCII雨图
+        if not HAS_MATPLOTLIB:
+            logger.info("matplotlib不可用，跳过图形雨图生成")
+            return None
+            
         try:
             # 准备数据
             times, precipitations, weather_descs = self._prepare_rain_data(
