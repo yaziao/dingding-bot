@@ -7,21 +7,29 @@
 
 ## 🚀 快速安装
 
+**注意：可选依赖组是互斥的，请只选择其中一种安装方式**
+
 ### 基础安装（无图形功能）
 ```bash
 # 适合服务器环境，只支持ASCII雨图
+uv sync
+# 或者
 pip install -e .
 ```
 
 ### 完整安装（包含图形功能）
 ```bash
 # 支持彩色雨图生成，需要C++17支持
+uv sync --extra graphics
+# 或者
 pip install -e ".[graphics]"
 ```
 
 ### 兼容老版本编译器安装
 ```bash
 # 适合不支持C++17的服务器环境
+uv sync --extra graphics-legacy
+# 或者
 pip install -e ".[graphics-legacy]"
 ```
 
@@ -30,19 +38,19 @@ pip install -e ".[graphics-legacy]"
 ### 情况1：支持C++17的现代服务器
 ```bash
 # 安装完整功能
-pip install -e ".[graphics]"
+uv sync --extra graphics
 ```
 
 ### 情况2：老版本服务器（不支持C++17）
 ```bash
 # 使用兼容版本
-pip install -e ".[graphics-legacy]"
+uv sync --extra graphics-legacy
 ```
 
 ### 情况3：纯服务器环境（无图形需求）
 ```bash
 # 基础安装，只使用ASCII雨图
-pip install -e .
+uv sync
 ```
 
 ## 📊 功能差异
@@ -99,13 +107,13 @@ _tkinter.TclError: no display name and no $DISPLAY environment variable
 ### 生产服务器
 ```bash
 # 推荐使用基础安装，稳定可靠
-pip install -e .
+uv sync
 ```
 
 ### 开发环境
 ```bash
 # 使用完整功能进行测试
-pip install -e ".[graphics]"
+uv sync --extra graphics
 ```
 
 ### Docker环境
@@ -113,9 +121,12 @@ pip install -e ".[graphics]"
 # Dockerfile示例
 FROM python:3.12-slim
 
+# 安装uv
+RUN pip install uv
+
 # 基础安装（推荐）
-RUN pip install -e .
+RUN uv sync
 
 # 或兼容安装
-# RUN pip install -e ".[graphics-legacy]"
+# RUN uv sync --extra graphics-legacy
 ```
