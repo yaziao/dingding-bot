@@ -1,0 +1,28 @@
+[Unit]
+Description=Weather Bot - DingTalk Weather Notification Service
+After=network.target
+
+[Service]
+Type=simple
+User=weather-bot
+Group=weather-bot
+WorkingDirectory=/opt/weather-bot
+Environment=PYTHONPATH=/opt/weather-bot
+ExecStart=/usr/bin/python3 main.py --interval 1
+Restart=always
+RestartSec=10
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=weather-bot
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/weather-bot/logs
+
+[Install]
+WantedBy=multi-user.target

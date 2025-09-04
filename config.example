@@ -1,0 +1,15 @@
+# 彩玉天气API配置
+CAIYUN_API_KEY=gxHPL7PUofKhtwNr
+# 获取API KEY: https://dashboard.caiyunapp.com/
+
+# 位置信息 (经度,纬度)
+LONGITUDE=116.4074
+LATITUDE=39.9042
+
+# 钉钉机器人Webhook配置
+DINGTALK_WEBHOOK=https://oapi.dingtalk.com/robot/send?access_token=bc8b26a26e70683a649a8288411d588bc74ce908d4cfd3505c35767c904ffd3f
+# 钉钉机器人密钥 (如果启用了加签)
+DINGTALK_SECRET=
+
+# 城市名称 (用于显示)
+CITY_NAME=北京
