@@ -1,8 +1,19 @@
 """彩玉天气API调用模块"""
 import requests
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from pydantic import BaseModel
+from datetime import datetime, timedelta
 from loguru import logger
+
+class HourlyWeatherData(BaseModel):
+    """小时级天气数据模型"""
+    datetime: datetime  # 时间
+    temperature: float  # 温度
+    humidity: float  # 湿度
+    weather_desc: str  # 天气描述
+    wind_speed: float  # 风速
+    wind_direction: float  # 风向
+    precipitation: float = 0.0  # 降水量
 
 class WeatherData(BaseModel):
     """天气数据模型"""
@@ -16,6 +27,7 @@ class WeatherData(BaseModel):
     aqi: Optional[int] = None  # 空气质量指数
     pm25: Optional[float] = None  # PM2.5
     pm10: Optional[float] = None  # PM10
+    hourly_forecast: List[HourlyWeatherData] = []  # 未来2小时预报
 
 class WeatherAPI:
     """彩玉天气API客户端"""
@@ -25,7 +37,27 @@ class WeatherAPI:
         self.base_url = "https://api.caiyunapp.com/v2.6"
     
     def get_weather(self, longitude: float, latitude: float) -> Optional[WeatherData]:
-        """获取天气数据"""
+        """获取天气数据（包含实时数据和未来2小时预报）"""
+        try:
+            # 获取实时天气数据
+            realtime_data = self._get_realtime_weather(longitude, latitude)
+            if not realtime_data:
+                return None
+            
+            # 获取小时级预报数据
+            hourly_forecast = self._get_hourly_forecast(longitude, latitude, hours=2)
+            
+            # 合并数据
+            realtime_data.hourly_forecast = hourly_forecast
+            
+            return realtime_data
+            
+        except Exception as e:
+            logger.error(f"获取天气数据失败: {e}")
+            return None
+    
+    def _get_realtime_weather(self, longitude: float, latitude: float) -> Optional[WeatherData]:
+        """获取实时天气数据"""
         try:
             url = f"{self.base_url}/{self.api_key}/{longitude},{latitude}/realtime"
             
@@ -38,10 +70,10 @@ class WeatherAPI:
             response.raise_for_status()
             
             data = response.json()
-            logger.info(f"获取天气数据成功: {data.get('status')}")
+            logger.info(f"获取实时天气数据成功: {data.get('status')}")
             
             if data.get("status") != "ok":
-                logger.error(f"天气API返回错误状态: {data.get('status')}")
+                logger.error(f"实时天气API返回错误状态: {data.get('status')}")
                 return None
             
             result = data.get("result", {})
@@ -64,11 +96,85 @@ class WeatherAPI:
             return weather_data
             
         except requests.exceptions.RequestException as e:
-            logger.error(f"请求天气API失败: {e}")
+            logger.error(f"请求实时天气API失败: {e}")
             return None
         except Exception as e:
-            logger.error(f"解析天气数据失败: {e}")
+            logger.error(f"解析实时天气数据失败: {e}")
             return None
+    
+    def _get_hourly_forecast(self, longitude: float, latitude: float, hours: int = 2) -> List[HourlyWeatherData]:
+        """获取小时级预报数据"""
+        try:
+            url = f"{self.base_url}/{self.api_key}/{longitude},{latitude}/hourly"
+            
+            headers = {
+                "User-Agent": "WeatherBot/1.0",
+                "Accept": "application/json"
+            }
+            
+            response = requests.get(url, headers=headers, timeout=10)
+            response.raise_for_status()
+            
+            data = response.json()
+            logger.info(f"获取小时级预报数据成功: {data.get('status')}")
+            
+            if data.get("status") != "ok":
+                logger.error(f"小时级预报API返回错误状态: {data.get('status')}")
+                return []
+            
+            result = data.get("result", {})
+            hourly = result.get("hourly", {})
+            
+            # 获取各项数据的时间序列
+            temperature = hourly.get("temperature", [])
+            humidity = hourly.get("humidity", [])
+            skycon = hourly.get("skycon", [])
+            wind = hourly.get("wind", [])
+            precipitation = hourly.get("precipitation", [])
+            
+            hourly_data = []
+            current_time = datetime.now()
+            
+            # 只取未来指定小时数的数据
+            for i in range(min(hours, len(temperature))):
+                try:
+                    forecast_time = current_time + timedelta(hours=i+1)
+                    
+                    # 安全获取数据，处理数组长度不一致的情况
+                    temp = temperature[i].get("value", 0) if i < len(temperature) else 0
+                    humid = humidity[i].get("value", 0) * 100 if i < len(humidity) else 0  # 转换为百分比
+                    sky = skycon[i].get("value", "") if i < len(skycon) else ""
+                    wind_data = wind[i] if i < len(wind) else {}
+                    precip = precipitation[i].get("value", 0) if i < len(precipitation) else 0
+                    
+                    wind_speed = wind_data.get("speed", 0) if wind_data else 0
+                    wind_direction = wind_data.get("direction", 0) if wind_data else 0
+                    
+                    hourly_weather = HourlyWeatherData(
+                        datetime=forecast_time,
+                        temperature=temp,
+                        humidity=humid,
+                        weather_desc=self._get_weather_description(sky),
+                        wind_speed=wind_speed,
+                        wind_direction=wind_direction,
+                        precipitation=precip
+                    )
+                    
+                    hourly_data.append(hourly_weather)
+                    
+                except Exception as e:
+                    logger.warning(f"解析第{i+1}小时预报数据失败: {e}")
+                    continue
+            
+            logger.info(f"成功获取{len(hourly_data)}小时的预报数据")
+            return hourly_data
+            
+        except requests.exceptions.RequestException as e:
+            logger.error(f"请求小时级预报API失败: {e}")
+            return []
+        except Exception as e:
+            logger.error(f"解析小时级预报数据失败: {e}")
+            return []
     
     def _get_weather_description(self, skycon: str) -> str:
         """将skycon代码转换为中文描述"""

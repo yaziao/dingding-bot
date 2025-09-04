@@ -1,7 +1,7 @@
 """天气数据美化格式化模块"""
 from datetime import datetime
-from typing import Optional
-from .weather import WeatherData
+from typing import Optional, List
+from .weather import WeatherData, HourlyWeatherData
 
 class WeatherFormatter:
     """天气数据格式化器"""
@@ -72,6 +72,38 @@ class WeatherFormatter:
             return "🔥 炎热"
     
     @staticmethod
+    def format_hourly_forecast(hourly_data: List[HourlyWeatherData]) -> str:
+        """格式化小时级预报数据（分行显示）"""
+        if not hourly_data:
+            return ""
+        
+        forecast_text = ""
+        for i, hour_data in enumerate(hourly_data):
+            time_str = hour_data.datetime.strftime("%H:%M")
+            emoji = WeatherFormatter.get_weather_emoji(hour_data.weather_desc)
+            wind_desc = WeatherFormatter.get_wind_direction_desc(hour_data.wind_direction)
+            
+            # 降水信息
+            precip_info = ""
+            if hour_data.precipitation > 0:
+                if hour_data.precipitation < 0.5:
+                    precip_info = " (微雨)"
+                elif hour_data.precipitation < 2.0:
+                    precip_info = " (小雨)"
+                elif hour_data.precipitation < 10.0:
+                    precip_info = " (中雨)"
+                else:
+                    precip_info = " (大雨)"
+            
+            forecast_text += f"\n\n**📅 {i+1}小时后 ({time_str})**\n"
+            forecast_text += f"- **温度：** {hour_data.temperature:.1f}°C\n"
+            forecast_text += f"- **天气：** {emoji} {hour_data.weather_desc}{precip_info}\n"
+            forecast_text += f"- **湿度：** 💧 {hour_data.humidity:.1f}%\n"
+            forecast_text += f"- **风向风速：** 💨 {wind_desc} {hour_data.wind_speed:.1f}m/s"
+        
+        return forecast_text
+    
+    @staticmethod
     def format_text_message(weather_data: WeatherData, city_name: str) -> str:
         """格式化为文本消息"""
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -101,6 +133,32 @@ class WeatherFormatter:
             if weather_data.pm10 is not None:
                 message += f"\n🔸 PM10：{weather_data.pm10:.1f}μg/m³"
         
+        # 添加未来2小时预报
+        if weather_data.hourly_forecast:
+            message += "\n\n🔮 未来2小时预报："
+            for i, hour_data in enumerate(weather_data.hourly_forecast):
+                time_str = hour_data.datetime.strftime("%H:%M")
+                emoji = WeatherFormatter.get_weather_emoji(hour_data.weather_desc)
+                wind_desc = WeatherFormatter.get_wind_direction_desc(hour_data.wind_direction)
+                
+                # 降水信息
+                precip_info = ""
+                if hour_data.precipitation > 0:
+                    if hour_data.precipitation < 0.5:
+                        precip_info = " (微雨)"
+                    elif hour_data.precipitation < 2.0:
+                        precip_info = " (小雨)"
+                    elif hour_data.precipitation < 10.0:
+                        precip_info = " (中雨)"
+                    else:
+                        precip_info = " (大雨)"
+                
+                message += f"\n\n📅 {i+1}小时后 ({time_str})"
+                message += f"\n🌡️ 温度：{hour_data.temperature:.1f}°C"
+                message += f"\n{emoji} 天气：{hour_data.weather_desc}{precip_info}"
+                message += f"\n💧 湿度：{hour_data.humidity:.1f}%"
+                message += f"\n💨 风向：{wind_desc} {hour_data.wind_speed:.1f}m/s"
+        
         # 添加贴心提醒
         message += f"\n\n💡 温馨提示："
         if weather_data.temperature <= 5:
@@ -116,6 +174,12 @@ class WeatherFormatter:
         
         if weather_data.wind_speed > 10:
             message += "\n💨 风力较大，注意安全！"
+        
+        # 检查未来2小时是否有降雨
+        if weather_data.hourly_forecast:
+            has_rain = any(h.precipitation > 0 for h in weather_data.hourly_forecast)
+            if has_rain and "雨" not in weather_data.weather_desc:
+                message += "\n☂️ 未来2小时可能有降雨，记得带伞！"
         
         return message
     
@@ -157,6 +221,12 @@ class WeatherFormatter:
                 content += f"- **PM10：** 🔸 {weather_data.pm10:.1f}μg/m³\n"
             content += "\n"
         
+        # 添加未来2小时预报
+        if weather_data.hourly_forecast:
+            content += "### 🔮 未来2小时预报\n"
+            hourly_forecast = WeatherFormatter.format_hourly_forecast(weather_data.hourly_forecast)
+            content += hourly_forecast + "\n\n"
+        
         # 添加贴心提醒
         content += "### 💡 温馨提示\n"
         tips = []
@@ -174,6 +244,12 @@ class WeatherFormatter:
         
         if weather_data.wind_speed > 10:
             tips.append("💨 风力较大，注意安全！")
+        
+        # 检查未来2小时是否有降雨
+        if weather_data.hourly_forecast:
+            has_rain = any(h.precipitation > 0 for h in weather_data.hourly_forecast)
+            if has_rain and "雨" not in weather_data.weather_desc:
+                tips.append("☂️ 未来2小时可能有降雨，记得带伞！")
         
         if not tips:
             tips.append("🌈 天气不错，适合外出活动！")
