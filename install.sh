@@ -26,12 +26,11 @@ fi
 
 echo ""
 echo "请选择安装类型："
-echo "1) 基础安装 (推荐服务器环境)"
-echo "2) 兼容安装 (老版本编译器)"
-echo "3) 完整安装 (需要C++17支持)"
+echo "1) 基础安装 (推荐 - 稳定可靠)"
+echo "2) 图形安装 (可选 - 包含matplotlib)"
 echo ""
 
-read -p "请输入选择 [1-3]: " choice
+read -p "请输入选择 [1-2]: " choice
 
 case $choice in
     1)
@@ -41,25 +40,22 @@ case $choice in
         else
             pip install -e .
         fi
-        echo "✅ 基础安装完成！支持功能: 热搜 + 天气 + ASCII雨图"
+        echo "✅ 基础安装完成！"
+        echo "   支持功能: 热搜 + 天气 + ASCII雨图"
+        echo "   兼容性: 完美支持任何服务器环境"
         ;;
     2)
-        echo "🔧 执行兼容安装..."
+        echo "🔧 执行图形安装..."
         if [ "$INSTALLER" = "uv" ]; then
-            uv sync --extra graphics-legacy
+            uv sync
+            pip install matplotlib numpy
         else
-            pip install -e ".[graphics-legacy]"
+            pip install -e .
+            pip install matplotlib numpy
         fi
-        echo "✅ 兼容安装完成！支持功能: 热搜 + 天气 + ASCII雨图 + 彩色图表"
-        ;;
-    3)
-        echo "🔧 执行完整安装..."
-        if [ "$INSTALLER" = "uv" ]; then
-            uv sync --extra graphics
-        else
-            pip install -e ".[graphics]"
-        fi
-        echo "✅ 完整安装完成！支持功能: 热搜 + 天气 + ASCII雨图 + 彩色图表"
+        echo "✅ 图形安装完成！"
+        echo "   支持功能: 热搜 + 天气 + ASCII雨图 + 彩色图表"
+        echo "   注意: 如果matplotlib安装失败，系统将自动降级为ASCII模式"
         ;;
     *)
         echo "❌ 无效选择"
@@ -70,15 +66,32 @@ esac
 echo ""
 echo "🧪 运行基础测试..."
 
-# 测试导入
-python3 -c "
+# 测试导入（使用uv run确保在正确环境中）
+if [ "$INSTALLER" = "uv" ]; then
+    TEST_CMD="uv run python3"
+else
+    TEST_CMD="python3"
+fi
+
+$TEST_CMD -c "
 try:
     from src.hotsearch import HotSearchAPI
     from src.weather import WeatherAPI
     from src.rain_visualizer import RainVisualizer
-    print('✅ 所有模块导入成功')
+    from src.formatter import WeatherFormatter
+    
+    # 检测功能支持
+    rv = RainVisualizer()
+    if rv.HAS_MATPLOTLIB:
+        print('✅ 所有模块导入成功 (支持图形功能)')
+    else:
+        print('✅ 所有模块导入成功 (ASCII模式)')
+        
 except ImportError as e:
     print(f'❌ 模块导入失败: {e}')
+    exit(1)
+except Exception as e:
+    print(f'❌ 系统测试失败: {e}')
     exit(1)
 "
 
@@ -88,6 +101,10 @@ echo ""
 echo "下一步："
 echo "1. 复制配置文件: cp config.example config"
 echo "2. 编辑配置文件: vim config"
-echo "3. 运行程序: python3 main.py"
+if [ "$INSTALLER" = "uv" ]; then
+    echo "3. 运行程序: uv run python3 main.py"
+else
+    echo "3. 运行程序: python3 main.py"
+fi
 echo ""
 echo "📚 更多帮助请查看: INSTALL.md"

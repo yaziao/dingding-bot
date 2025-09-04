@@ -14,15 +14,10 @@ dependencies = [
     "apscheduler>=3.10.0"
 ]
 
-[project.optional-dependencies]
-# 图形依赖 - 现代环境（需要C++17支持）
-graphics = [
-    "matplotlib>=3.5.0,<3.7.0",
-    "numpy>=1.21.0,<1.24.0"
-]
-
-# 兼容老版本C++编译器的图形依赖（与graphics互斥）
-graphics-legacy = [
-    "matplotlib>=3.2.0,<3.5.0",
-    "numpy>=1.19.0,<1.21.0"
-]
+# 暂时移除图形依赖，避免编译问题
+# 使用ASCII雨图即可满足需求，稳定可靠
+# [project.optional-dependencies]
+# graphics = [
+#     "matplotlib>=3.8.0",
+#     "numpy>=1.26.0"
+# ]

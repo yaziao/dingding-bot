@@ -29,6 +29,8 @@ class RainVisualizer:
     """雨图可视化器"""
     
     def __init__(self):
+        # 存储matplotlib支持状态
+        self.HAS_MATPLOTLIB = HAS_MATPLOTLIB
         # 只在有matplotlib时设置字体
         if HAS_MATPLOTLIB:
             try:
