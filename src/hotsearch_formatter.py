@@ -57,22 +57,29 @@ class HotSearchFormatter:
         """格式化为文本消息"""
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M")
         
-        message = f"🔥 {hotsearch_data.source} 🔥\n"
+        message = f"🔥 {hotsearch_data.source}热搜榜 🔥\n"
         message += f"📅 更新时间：{current_time}\n\n"
         
         for item in hotsearch_data.items:
             rank_emoji = HotSearchFormatter.get_rank_emoji(item.rank)
             category_emoji = HotSearchFormatter.get_category_emoji(item.category)
             
-            message += f"{rank_emoji} {item.rank}. {item.title}"
+            # 基本格式：排名 + 标题
+            line = f"{rank_emoji} {item.rank}. {item.title}"
             
+            # 添加热度值
             if item.hot_value:
-                message += f" ({item.hot_value})"
+                line += f" ({item.hot_value})"
             
+            # 添加分类图标
             if item.category:
-                message += f" {category_emoji}"
+                line += f" {category_emoji}"
             
-            message += "\n"
+            # 如果有URL，提示可以点击查看详情
+            if item.url:
+                line += " 🔗"
+            
+            message += line + "\n"
         
         message += f"\n📊 共{len(hotsearch_data.items)}条热搜"
         message += f"\n⏰ 数据更新：{hotsearch_data.update_time}"
@@ -84,58 +91,32 @@ class HotSearchFormatter:
         """格式化为Markdown消息，返回(title, content)"""
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M")
         
-        title = f"🔥 {hotsearch_data.source}"
+        title = f"🔥 {hotsearch_data.source}热搜榜"
         
-        content = f"## 🔥 {hotsearch_data.source}\n\n"
+        content = f"## 🔥 {hotsearch_data.source}热搜榜\n\n"
         content += f"> 📅 **更新时间：** {current_time}\n\n"
         content += "---\n\n"
         
-        # 分组显示热搜
-        content += "### 🏆 热门排行\n\n"
+        # 直接显示前10条热搜，不分组
+        display_items = hotsearch_data.items[:10]  # 只取前10条
         
-        # 前三名特殊显示
-        top_items = hotsearch_data.items[:3]
-        for item in top_items:
+        for item in display_items:
             rank_emoji = HotSearchFormatter.get_rank_emoji(item.rank)
-            category_emoji = HotSearchFormatter.get_category_emoji(item.category)
             
-            content += f"**{rank_emoji} {item.rank}. {item.title}**"
+            # 如果有URL，创建可点击的链接
+            if item.url:
+                content += f"**{rank_emoji} {item.rank}.** [{item.title}]({item.url})"
+            else:
+                content += f"**{rank_emoji} {item.rank}.** {item.title}"
             
             if item.hot_value:
                 content += f" `{item.hot_value}`"
             
-            if item.category:
-                content += f" {category_emoji}"
-            
             content += "\n\n"
-        
-        # 其他热搜条目
-        if len(hotsearch_data.items) > 3:
-            content += "### 📈 其他热门\n\n"
-            other_items = hotsearch_data.items[3:]
-            
-            for item in other_items:
-                rank_emoji = HotSearchFormatter.get_rank_emoji(item.rank)
-                category_emoji = HotSearchFormatter.get_category_emoji(item.category)
-                
-                content += f"- **{item.rank}.** {item.title}"
-                
-                if item.hot_value:
-                    content += f" `{item.hot_value}`"
-                
-                if item.category:
-                    content += f" {category_emoji}"
-                
-                content += "\n"
-            
-            content += "\n"
         
         # 统计信息
         content += "---\n\n"
-        content += f"📊 **统计信息**\n"
-        content += f"- 总计：{len(hotsearch_data.items)} 条热搜\n"
-        content += f"- 数据源：{hotsearch_data.source}\n"
-        content += f"- 更新时间：{hotsearch_data.update_time}\n"
+        content += f"📊 **数据源：** {hotsearch_data.source} | **更新时间：** {hotsearch_data.update_time}\n"
         
         return title, content
     
@@ -147,6 +128,9 @@ class HotSearchFormatter:
         message = f"📈 {hotsearch_data.source} Top{len(items)}:\n\n"
         
         for item in items:
-            message += f"{item.rank}. {item.title}\n"
+            if item.url:
+                message += f"{item.rank}. [{item.title}]({item.url})\n"
+            else:
+                message += f"{item.rank}. {item.title}\n"
         
         return message

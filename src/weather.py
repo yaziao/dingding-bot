@@ -27,6 +27,7 @@ class WeatherData(BaseModel):
     aqi: Optional[int] = None  # 空气质量指数
     pm25: Optional[float] = None  # PM2.5
     pm10: Optional[float] = None  # PM10
+    precipitation: float = 0.0  # 当前降水量
     hourly_forecast: List[HourlyWeatherData] = []  # 未来2小时预报
 
 class WeatherAPI:
@@ -36,16 +37,17 @@ class WeatherAPI:
         self.api_key = api_key
         self.base_url = "https://api.caiyunapp.com/v2.6"
     
-    def get_weather(self, longitude: float, latitude: float) -> Optional[WeatherData]:
-        """获取天气数据（包含实时数据和未来2小时预报）"""
+    def get_weather(self, longitude: float, latitude: float, include_rain_forecast: bool = True) -> Optional[WeatherData]:
+        """获取天气数据（包含实时数据和小时预报）"""
         try:
             # 获取实时天气数据
             realtime_data = self._get_realtime_weather(longitude, latitude)
             if not realtime_data:
                 return None
             
-            # 获取小时级预报数据
-            hourly_forecast = self._get_hourly_forecast(longitude, latitude, hours=2)
+            # 获取小时级预报数据（降雨图需要更多小时数据）
+            hours = 24 if include_rain_forecast else 2
+            hourly_forecast = self._get_hourly_forecast(longitude, latitude, hours=hours)
             
             # 合并数据
             realtime_data.hourly_forecast = hourly_forecast
@@ -88,6 +90,7 @@ class WeatherAPI:
                 wind_direction=realtime.get("wind", {}).get("direction", 0),
                 visibility=realtime.get("visibility", 0),
                 weather_desc=self._get_weather_description(realtime.get("skycon", "")),
+                precipitation=realtime.get("precipitation", {}).get("local", {}).get("intensity", 0),
                 aqi=realtime.get("air_quality", {}).get("aqi", {}).get("chn", None),
                 pm25=realtime.get("air_quality", {}).get("pm25", None),
                 pm10=realtime.get("air_quality", {}).get("pm10", None)

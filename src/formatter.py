@@ -1,10 +1,15 @@
 """天气数据美化格式化模块"""
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Tuple
+from loguru import logger
 from .weather import WeatherData, HourlyWeatherData
+from .rain_visualizer import RainVisualizer
 
 class WeatherFormatter:
     """天气数据格式化器"""
+    
+    def __init__(self):
+        self.rain_visualizer = RainVisualizer()
     
     @staticmethod
     def get_weather_emoji(weather_desc: str) -> str:
@@ -223,7 +228,7 @@ class WeatherFormatter:
         
         # 添加未来2小时预报
         if weather_data.hourly_forecast:
-            content += "### 🔮 未来2小时预报\n"
+            content += "\n### 🔮 未来2小时预报\n"
             hourly_forecast = WeatherFormatter.format_hourly_forecast(weather_data.hourly_forecast)
             content += hourly_forecast + "\n\n"
         
@@ -258,3 +263,85 @@ class WeatherFormatter:
             content += f"- {tip}\n"
         
         return title, content
+    
+    def format_message_with_rain_chart(self, weather_data: WeatherData, city_name: str, 
+                                     include_image: bool = True) -> tuple[str, str]:
+        """格式化天气消息并包含雨图，返回(title, content)"""
+        title, content = self.format_markdown_message(weather_data, city_name)
+        
+        # 添加雨图相关信息
+        rain_info = self._get_rain_summary(weather_data)
+        if rain_info:
+            content += f"\n\n### 🌧️ 降水信息\n{rain_info}\n"
+        
+        # 生成ASCII雨图（钉钉更兼容）
+        try:
+            ascii_chart = self.rain_visualizer.generate_simple_rain_chart(weather_data, city_name)
+            if ascii_chart:
+                content += f"\n### 📊 降水预报图\n```\n{ascii_chart}\n```\n"
+            else:
+                content += "\n### 📊 降水预报图\n`暂无降水数据`\n"
+        except Exception as e:
+            logger.warning(f"生成雨图失败: {e}")
+            content += "\n### 📊 降水预报图\n`雨图生成失败，请查看降水信息`\n"
+        
+        return title, content
+    
+    def _get_rain_summary(self, weather_data: WeatherData) -> str:
+        """获取降水摘要信息"""
+        summary_lines = []
+        
+        # 当前降水
+        if weather_data.precipitation > 0:
+            level = self._get_precipitation_level(weather_data.precipitation)
+            summary_lines.append(f"- **当前降水：** {weather_data.precipitation:.1f}mm/h ({level})")
+        else:
+            summary_lines.append("- **当前降水：** 无降水")
+        
+        # 未来降水预报
+        if weather_data.hourly_forecast:
+            has_rain = False
+            max_precip = 0
+            total_precip = 0
+            
+            for hour_data in weather_data.hourly_forecast:
+                if hour_data.precipitation > 0:
+                    has_rain = True
+                    max_precip = max(max_precip, hour_data.precipitation)
+                    total_precip += hour_data.precipitation
+            
+            if has_rain:
+                avg_precip = total_precip / len(weather_data.hourly_forecast)
+                max_level = self._get_precipitation_level(max_precip)
+                summary_lines.append(f"- **未来{len(weather_data.hourly_forecast)}小时：** 有降水，最大{max_precip:.1f}mm/h ({max_level})")
+                summary_lines.append(f"- **平均降水强度：** {avg_precip:.1f}mm/h")
+            else:
+                summary_lines.append(f"- **未来{len(weather_data.hourly_forecast)}小时：** 无明显降水")
+        
+        # 降水建议
+        if weather_data.precipitation > 0 or any(h.precipitation > 0 for h in weather_data.hourly_forecast):
+            if max(weather_data.precipitation, 
+                   max((h.precipitation for h in weather_data.hourly_forecast), default=0)) > 8:
+                summary_lines.append("- **出行建议：** ⚠️ 降水较强，建议减少外出，注意安全")
+            elif max(weather_data.precipitation,
+                    max((h.precipitation for h in weather_data.hourly_forecast), default=0)) > 2:
+                summary_lines.append("- **出行建议：** ☂️ 建议携带雨具，注意路面湿滑")
+            else:
+                summary_lines.append("- **出行建议：** 🌂 可能有小雨，建议备好雨具")
+        
+        return "\n".join(summary_lines)
+    
+    def _get_precipitation_level(self, precipitation: float) -> str:
+        """获取降水等级描述"""
+        if precipitation == 0:
+            return "无降水"
+        elif precipitation < 0.5:
+            return "微雨"
+        elif precipitation < 2.0:
+            return "小雨"
+        elif precipitation < 8.0:
+            return "中雨" 
+        elif precipitation < 20.0:
+            return "大雨"
+        else:
+            return "暴雨"

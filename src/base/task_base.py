@@ -45,7 +45,7 @@ class TaskBase(ABC):
             # 获取数据
             data = self.fetch_data()
             if not data:
-                logger.warning(f"任务 {self.name} 未获取到数据")
+                logger.warning(f"任务 {self.name} 未获取到数据，跳过发送消息")
                 return False
             
             # 格式化消息
